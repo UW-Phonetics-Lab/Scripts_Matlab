@@ -1,0 +1,11 @@
+function [numSamp numChan sampRate] = getSampRate(stimList)
+    % read the first WAV file and determine its number of samples and
+    % mono/stereo. Also, assume that all files have the same sample
+    % rate and store that number for use during playback.
+    numSamp = 0;
+    numChan = 0;
+    sampRate = 0;
+    [numSamp numChan] = wavread(stimList{1},'size');
+    [~, sampRate] = wavread(stimList(1,1));
+
+

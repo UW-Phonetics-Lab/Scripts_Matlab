@@ -1,0 +1,155 @@
+% set up the parameters for a perception experiment
+function createPerceptionExperimentFile()
+    % UI
+    screenSize = get(0, 'ScreenSize');
+    crPerExpFileWindow = figure('color',[0.5 0.8 0.5]);
+    set(crPerExpFileWindow,'pos', [0 0 screenSize(3) screenSize(4)]);
+    
+    % main inputs
+    mainInputs = uipanel('title',' Basic Parameters ','backgroundcolor',[0.5 0.8 0.5],'units','pixels','pos',[50 600 500 310]);
+    subCodeBox = uicontrol('parent',mainInputs,'style','edit','units','pixels','pos',[10 260 90 25],'backgroundColor',[1 1 1]);
+    expCodeBox = uicontrol('parent',mainInputs,'style','edit','units','pixels','pos',[10 210 90 25],'backgroundColor',[1 1 1]);
+    isiLoBox = uicontrol('parent',mainInputs,'style','edit','units','pixels','pos',[10 160 90 25],'backgroundColor',[1 1 1],'tag','Min. ISI');
+    isiHiBox = uicontrol('parent',mainInputs,'style','edit','units','pixels','pos',[10 110 90 25],'backgroundColor',[1 1 1],'tag','Max. ISI');
+    repeatBox = uicontrol('parent',mainInputs,'style','edit','units','pixels','pos',[10 60 90 25],'backgroundColor',[1 1 1],'tag','Num. repetitions');
+    pausesBox = uicontrol('parent',mainInputs,'style','edit','units','pixels','pos',[100 10 90 25],'backgroundColor',[1 1 1],'tag','Num. pauses');
+    
+    % main inputs: explanatory labels
+    uicontrol('parent',mainInputs,'style','text','units','pixels','pos',[110 255 250 25],'backgroundcolor',[0.5 0.8 0.5],'horizontalAlignment','left','string','Subject code');
+    uicontrol('parent',mainInputs,'style','text','units','pixels','pos',[110 205 250 25],'backgroundcolor',[0.5 0.8 0.5],'horizontalAlignment','left','string','Experiment code');
+    uicontrol('parent',mainInputs,'style','text','units','pixels','pos',[110 155 250 25],'backgroundcolor',[0.5 0.8 0.5],'horizontalAlignment','left','string','minimum inter-stimulus interval (ms)');
+    uicontrol('parent',mainInputs,'style','text','units','pixels','pos',[110 105 250 25],'backgroundcolor',[0.5 0.8 0.5],'horizontalAlignment','left','string','maximum inter-stimulus interval (ms)');
+    uicontrol('parent',mainInputs,'style','text','units','pixels','pos',[110 55 250 25],'backgroundcolor',[0.5 0.8 0.5],'horizontalAlignment','left','string','number of repetitions of each stimulus');
+    uicontrol('parent',mainInputs,'style','text','units','pixels','pos',[10 5 80 25],'backgroundcolor',[0.5 0.8 0.5],'horizontalAlignment','left','string','pause every');
+    uicontrol('parent',mainInputs,'style','text','units','pixels','pos',[200 5 250 25],'backgroundcolor',[0.5 0.8 0.5],'horizontalAlignment','left','string','stimuli (0 means no pauses)');
+    
+    % left/right scheme
+    leftRightScheme = uibuttongroup('title',' Left/Right Scheme ','backgroundcolor',[0.5 0.8 0.5],'units','pixels','pos',[50 350 600 230],'SelectionChangeFcn',@lrSchemeChange);
+    uicontrol('parent',leftRightScheme,'style','Radio','tag','stereo','units','pixels','pos',[20 155 550 25],'string','Stereo: the stimuli are already two-channel');
+    uicontrol('parent',leftRightScheme,'style','Radio','tag','mono','units','pixels','pos',[20 125 550 25],'string','Mono > Stereo: play mono stimuli to both ears simultaneously','value',1);
+    uicontrol('parent',leftRightScheme,'style','Radio','tag','random','units','pixels','pos',[20 95 550 25],'string','Mono > Random: mono stimuli will randomly play in left or right ear');
+    uicontrol('parent',leftRightScheme,'style','Radio','tag','balanced','units','pixels','pos',[20 65 550 25],'string','Mono > Balanced: half of mono stimuli played to left ear, half played to right ear');
+    uicontrol('parent',leftRightScheme,'style','Radio','tag','mirrored','units','pixels','pos',[20 35 750 25],'string','Mono > Mirrored: each mono stimulus played to both left and right ears in separate trials');
+    uicontrol('parent',leftRightScheme,'style','text','units','pixels','pos',[40 10 730 25],'string','(note: this requires an even number for "repetitions" above)');
+    
+    % randomization scheme
+    randomScheme = uibuttongroup('title',' Randomization Scheme ','backgroundcolor',[0.5 0.8 0.5],'units','pixels','pos',[50 200 600 130],'SelectionChangeFcn',@randSchemeChange);
+    uicontrol('parent',randomScheme,'style','Radio','tag','none','units','pixels','pos',[20 70 750 25],'string','Do not randomize (play stimuli in the order presented in the stimulus file)');
+    uicontrol('parent',randomScheme,'style','Radio','tag','full','units','pixels','pos',[20 40 750 25],'string','Fully randomize stimulus order across the whole session');
+    uicontrol('parent',randomScheme,'style','Radio','tag','block','units','pixels','pos',[20 10 750 25],'string','Randomize within blocks (play each stimulus once before repeating any)');
+    
+    % user input scheme
+    userInputScheme = uibuttongroup('title',' User Input Scheme ','backgroundcolor',[0.5 0.8 0.5],'units','pixels','pos',[50 50 600 130],'SelectionChangeFcn',@inputSchemeChange);
+    uicontrol('parent',userInputScheme,'style','Radio','tag','infinite','units','pixels','pos',[20 70 550 30],'string','Infinite: system waits for response before continuing');
+    uicontrol('parent',userInputScheme,'style','Radio','tag','timeout','units','pixels','pos',[20 40 550 30],'string','Fixed Timeout: next stimulus plays after specified duration (plus any ISI set above)');
+    timeoutTxt = uicontrol('enable','off','parent',userInputScheme,'style','text','units','pixels','pos',[20 5 130 25],'backgroundcolor',[0.5 0.8 0.5],'horizontalAlignment','left','string','timeout duration (ms):');
+    timeoutBox = uicontrol('enable','off','parent',userInputScheme,'style','edit','units','pixels','pos',[160 10 90 25],'backgroundColor',[1 1 1],'tag','timeout');
+        
+    % submit button
+    uicontrol('style','pushbutton','pos',[750 50 75 25],'string','Submit','callback',@checkFields);
+    
+    % global variables
+    lrScheme = 'mono';
+    randScheme = 'none';
+    inputScheme = '';
+    inputDur = -1;
+    repetitions = -1;
+    
+    %write TXT and MAT file
+    
+    function checkFields(~,~)
+        % check that the fields are filled in and proper
+        a = get(subCodeBox, 'string');
+        b = get(expCodeBox, 'string');
+        if strcmp(a,'') == 1
+            uiwait(errordlg('subject code cannot be blank','Error','replace'));
+        end
+        if strcmp(b,'') == 1
+            uiwait(errordlg('experiment code cannot be blank','Error','replace'));
+        end
+        if isnan(str2double(get(isiLoBox,'string'))) == 1 || str2double(get(isiLoBox,'string')) < 0
+            uiwait(errordlg(strcat(get(isiLoBox,'tag'),' must be a positive integer'),'Error','replace'));
+        end
+        if isnan(str2double(get(isiHiBox,'string'))) == 1 || str2double(get(isiHiBox,'string')) < str2double(get(isiLoBox,'string'))
+            uiwait(errordlg(strcat(get(isiHiBox,'tag'),' must be a positive integer larger than minimum ISI'),'Error','replace'));
+        end
+        if isnan(str2double(get(repeatBox,'string'))) == 1 || str2double(get(repeatBox,'string')) < 0
+            uiwait(errordlg(strcat(get(repeatBox,'tag'),' must be a positive integer'),'Error','replace'));
+        end
+        if isnan(str2double(get(pausesBox,'string'))) == 1 || str2double(get(pausesBox,'string')) < 0
+            uiwait(errordlg(strcat(get(pausesBox,'tag'),' must be a positive integer'),'Error','replace'));
+        end
+        
+        if strcmp(lrScheme,'mirrored') == 1
+            if mod(repetitions,2) ~= 0 || repetitions < 2
+                uiwait(errordlg(strcat(get(repeatBox,'tag'),' must be a positive even number when left-right scheme is set to "mirrored"'),'Error','replace'));
+                
+            end
+        end
+        
+        if strcmp(inputScheme,'timeout') == 1
+            if isnan(str2double(get(timeoutBox,'string'))) == 1
+                uiwait(errordlg(strcat(get(timeoutBox,'tag'),' must be an integer'),'Error','replace'));
+            else
+                inputDur = str2double(get(timeoutBox,'string'));
+            end
+        end
+        
+        writeParametersToFile();
+    end
+
+    function writeParametersToFile()
+        %write all the experiment parameters to a text file
+        datestamp = datestr(fix(clock), 30);
+        expCode = get(expCodeBox,'string');
+        subCode = get(subCodeBox,'string');
+        isiLo = str2double(get(isiLoBox,'string'));
+        isiHi = str2double(get(isiHiBox,'string'));
+        isiRange = strcat(num2str(isiLo),' - ',num2str(isiHi));
+        repetitions = str2double(get(repeatBox,'string'));
+        pauses = str2double(get(pausesBox,'string'));
+        
+        if strcmp(inputScheme,'timeout') == 1
+            inputScheme2 = strcat(get(timeoutBox,'string'),' ms timeout');
+        else
+            inputScheme2 = inputScheme;
+        end
+        
+        codedFilename = strcat(expCode,'_',subCode,'_',datestamp);
+        outputFile = fopen(strcat(codedFilename,'.txt'), 'w');
+        fprintf(outputFile, 'experiment code\t%s\n',expCode);
+        fprintf(outputFile, 'subject code\t%s\n',subCode);
+        fprintf(outputFile, 'inter-stimulus interval range (ms)\t%s\n',isiRange);
+        fprintf(outputFile, 'number of repetitions\t%i\n',repetitions);
+        fprintf(outputFile, 'left-right scheme\t%s\n',lrScheme);
+        fprintf(outputFile, 'randomization scheme\t%s\n',randScheme);
+        fprintf(outputFile, 'input scheme\t%s\n',inputScheme2);
+        fprintf(outputFile, 'user response window duration (ms)\t%i\n',inputDur);
+        fprintf(outputFile, 'pause every __ stimuli\t%i\n',pauses);
+        fclose(outputFile);
+        
+        %write to a MAT file as well
+        save(strcat(codedFilename,'.mat'),'expCode','subCode','isiLo','isiHi','repetitions','lrScheme','randScheme','inputScheme','inputDur','pauses');
+        close(crPerExpFileWindow);
+    end
+
+    function lrSchemeChange(~,eventdata)
+        lrScheme = get(eventdata.NewValue,'tag');
+    end
+
+    function randSchemeChange(~,eventdata)
+        randScheme = get(eventdata.NewValue,'tag');
+    end
+
+    function inputSchemeChange(~,eventdata)
+        if strcmp(get(eventdata.NewValue,'tag'),'infinite') == 1
+            set(timeoutBox,'enable','off');
+            set(timeoutTxt,'enable','off');
+            inputScheme = 'infinite';
+        else
+            set(timeoutBox,'enable','on');
+            set(timeoutTxt,'enable','on');
+            inputScheme = 'timeout';
+        end
+    end
+end

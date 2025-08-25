@@ -1,0 +1,94 @@
+function [userResponse] = playStim(fullStimMatr,trialNum,sampRate,inputScheme,inputDur) 
+    responseTimer = NaN;
+    % this will get instantiated and then reused for each stim (but only in
+    % experiments with a fixed response time window)
+    
+    % the audio data vector
+    currentStim = fullStimMatr(:,trialNum,:);
+
+    % truncate the audio vector just before the first NaN
+    a = find(isnan(currentStim(:,1,1)),1,'first');
+    currentStim = currentStim(1:a-1,:,:);
+    audioStim = audioplayer(currentStim, sampRate);
+
+    if strcmp(inputScheme, 'timeout') == 1
+    % if the experiment requires a response within a set time window,
+    % then start a timer immediately after the stim; in this case the
+    % "next" button (a.k.a. genericBtn) should already be hidden.
+        responseTimer = timer('startFcn',@showChoices,'TimerFcn',@hideChoices,'TasksToExecute',1,'StartDelay',inputDur*0.001);
+        playblocking(audioStim);
+        start(responseTimer);
+    else
+    % the experiment allows infinite response time...
+        % play the sound, blocking code excution until it's done
+        playblocking(audioStim);
+    end
+    % record the trial number and stimulus number. User response is
+    % pre-populated with a zero; this helps us detect multiple
+    % keystrokes and mark them as errors.
+    userResponse(1) = 0;
+    
+    function killTimer()
+        
+    end
+    
+    
+% % % % % % % % % % % % % % % % % % % % % % % % % % % %
+% FUNCTIONS THAT DEAL WITH THE FORCED CHOICE RESPONSES
+% % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+
+    function showChoices()
+        % show the forced choices
+        % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+         % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+        % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+         % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+        % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+         % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+        
+        % start listening for responses
+        set(experimentWindow,'KeyPressFcn',@acceptUserInput);
+    end
+
+    function hideChoices()
+        % hide the forced choices
+        % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+         % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+        % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+         % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+        % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+         % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+        
+        % stop listening for responses
+        set(experimentWindow,'KeyPressFcn',@ignoreUserInput);
+        
+        % calculate ISI
+        isi = isiLo + round(rand(1)*(isiHi-isiLo));
+        
+        % wait for the ISI duration
+        isiTimer = timer('StartDelay',isi,'TasksToExecute',1,'TimerFcn',@ignoreUserInput);
+        start(isiTimer);
+        wait(isiTimer);
+        delete(isiTimer);
+    end
+
+    function ignoreUserInput(~,~)
+        % do nothing. This just exists to prevent keystrokes from getting
+        % passed to the command window at times when we don't want to
+        % collect user input.
+    end
+
+    function acceptUserInput(~,EventData)
+        % record responses
+        if userResponse(1) == 0
+        % if the user has not yet responded, record their response
+            userResponse(1) = EventData.Character;
+        else
+        % if for some reason they are giving a second response within the
+        % designated response time window, record the response in a
+        % separate cell.
+            userResponse(2) = EventData.Character;
+        end
+    end
+    
+end

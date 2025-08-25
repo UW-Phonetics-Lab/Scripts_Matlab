@@ -1,0 +1,353 @@
+% load parameters and stimuli for a perception experiment and run the experiment
+function runPerceptionExperiment(expCode,subCode,isiLo,isiHi,repetitions,pauses,lrScheme,randScheme,inputScheme,inputDur,stimList)
+    % global variables
+    expLog = [];
+    stimNums = [];
+    paused = 0;
+    counter = 0; % steps through the fullStimList
+    tempStimList = [];
+    fullStimList = [];
+    fullStimMatr = [];
+    % tempStimList includes repetitions and L/R scheme of the stimuli.
+    % Column 1 is stimulus ID number, column 2 is a code for the L/R
+    % presentation of the stimulus:
+    % -1 = user specified that the stims are stereo
+    %  0 = play mono sound to both ears
+    %  1 = play mono sound to left ear
+    %  2 = play mono sound to right ear
+    %
+    % fullStimList is a permutation of tempStimList, whose order depends on
+    % the randomization scheme selected.
+    %
+    % fullStimMatr is a 3D array, described more fully in the comments
+    % within the "preloadStims" function below.
+    % 
+    % ultimately tempStimList and fullStimList will have other
+    % columns (for forced-choice responses or images/text that goes along
+    % with the audio stim)
+    
+    responseTimer = NaN;
+    % this will get instantiated and then reused for each stim (but only in
+    % experiments with a fixed response time window)
+
+    % the variables below will all get overwritten by the imported MAT file
+    % containing the experimental parameters. But MATLAB requires that they
+    % be locally declared rather than imported.
+    
+    
+% % % % % % % % % % % % % % % % % % % % % % % % % % % %
+% FUNCTIONS FOR MANAGING THE STIMULI
+% % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+
+    % this sequentially numbers stimuli, and repeats that sequential
+    % list of numbers for as many times as specified in the
+    % "repetitions" variable
+    stimNums = 1:length(stimList);
+    tempStimList = repmat(stimNums,[repetitions 1]);
+    blocksize = length(stimList);
+
+    switch lrScheme
+        case 'mono'
+        % left and right channels identical
+            tempStimList(:,2) = zeros([length(tempStimList) 1]);
+
+        case 'random'
+        % left and right channels randomly assigned
+            tempStimList(:,2) = round(rand([length(tempStimList) 1]) + 1);
+            % this gives a random assortment of ones and twos, which
+            % will be interpreted as left and right
+
+        case 'balanced'
+        % half of stimuli to each side
+            a = ones([length(tempStimList) 1]);
+            a(1:floor(length(tempStimList)/2)) = 2;
+            b = a(randperm(length(a)));
+            tempStimList(:,2) = b;
+            % this gives a random ordering of ones and twos, with equal
+            % numbers of each.  If there are an odd number of distinct
+            % stimuli and an odd number of repetitions, then there will
+            % be an odd number of trials and hence one more stim going
+            % to the left ear than the number going to the right ear
+
+        case 'mirrored'
+        % each stimulus to right & left sides an equal number of times
+        % (requires an even number of "repetitions")
+            a = zeros([length(tempStimList) 1]);
+            b = ones(repetitions);
+            b(1:floor(repetitions/2)) = 2;
+            % the "floor" part is not strictly necessary since 
+            % 'repetitions' is an even number when l/r scheme =
+            % 'mirrored'.
+            for k = 1:blocksize
+                c = b(randperm(repetitions));
+                for j = 0:repetitions-1
+                    a(k+j*blocksize) = c(k);
+                end
+            end
+            tempStimList(:,2) = a;
+            % this iterates through the stimulus ID numbers (i) and
+            % randomly assigns an equal number of ones and twos to each
+            % instance of that stimulus across all blocks (j).  Thus,
+            % each stimulus (i) will play an equal number of times to
+            % the left and right ear, but the L/R assignment for any
+            % given trial block is not necessarily balanced (i.e., it
+            % is possible (though unlikely) that a two block trial
+            % could end up with all the first block stims playing left,
+            % and all the second block stims playing right).  If you
+            % want a 'mirrored' setup but with a balanced number of
+            % L/R stimuli in each block, then run each block as a
+            % separate experiment with only 2 repetitions and a 'block'
+            % type randomization scheme.
+
+        otherwise
+        % the user says the stimuli are stereo (2-channel) WAV files
+            tempStimList(:,2) = -1;
+    end
+
+    switch randScheme
+        case 'full'
+            % this randomizes all trials/repetitions at once.
+            fullStimList = tempStimList(randperm(length(tempStimList)),:);
+        case 'block'
+            % this randomizes each block of stims separately, and plays
+            % the blocks sequentially
+            a = zeros(length(tempStimList));
+            for m = 0:repetitions-1
+                b = randperm(1:blocksize);
+                c = 1+(m*blocksize);
+                d = (1+m)*blocksize;
+                a(c:d) = b + m*blocksize;
+            end
+            fullStimList = tempStimList(a,:);
+        otherwise
+            % do nothing. no randomization was requested, so we play
+            % the stims in the order presented (with repetitions at the
+            % block level)
+            fullStimList = tempStimList;
+    end
+    
+    % % % % % % % % % % % % % 
+    % PRELOAD ALL THE STIMULI
+    % % % % % % % % % % % % % 
+    % read the first WAV file and determine its number of samples and
+    % mono/stereo. Also, assume that all files have the same sample
+    % rate and store that number for use during playback.
+    [numSamp numChan] = wavread(stimList(1,1),'size');
+    [~, sampRate] = wavread(stimList(1,1)); 
+
+    % assuming all files are roughly the same length, we preallocate
+    % the vector of WAVs with NaNs for better memory performance
+    % (instead of figuring out the longest file, we just take the first
+    % stim and double its length. Extra NaNs at the end will be trimmed
+    % later.)  If by chance one of the later stims is longer than
+    % 2*firstStim, MATLAB will automatically reallocate to a bigger
+    % memory chunk (slows down the preloading but ultimately not a big
+    % deal if it happens)
+
+    tempStimMatr = NaN(2*numSamp,length(stimList),2);
+    fullStimMatr = NaN(2*numSamp,length(fullStimList),2);
+    % hence we have an array of samples thusly arranged:
+    % dimension 2 (cols) = trials
+    % dimension 1 (rows) = samples
+    % dimension 3 (pgs.) = left & right channels
+
+    if numChan == 1
+    % the stimuli are mono WAV files
+
+        % preload all stims into a temporary matrix of samples
+        for n = 1:length(stimList)
+            M = wavread(stimList(n,1));
+            tempStimMatr(0:length(M),n) = M;
+        end
+
+        % copy those stims into a matrix of trials, with appropriate
+        % L/R assignments
+        for p = 1:length(fullStimList)
+            a = fullStimList(p,2); % the L/R code for each trial
+            switch a
+                case 0
+                % play mono sound to both ears
+                    fullStimMatr(:,p,1) = tempStimMatr(:,fullStimList(p,1));
+                    fullStimMatr(:,p,2) = tempStimMatr(:,fullStimList(p,1));
+                case 1
+                % play mono stim to left ear
+                    fullStimMatr(:,p,1) = tempStimMatr(:,fullStimList(p,1));
+                    fullStimMatr(:,p,2) = zeros(length(tempStimMatr));
+                case 2
+                % play mono stim to right ear
+                    fullStimMatr(:,p,1) = zeros(length(tempStimMatr));
+                    fullStimMatr(:,p,2) = tempStimMatr(:,fullStimList(p,1));
+                otherwise
+                % this should never occur, since if the code is -1 then
+                % the user specified "stereo" which would fail the
+                % "numChan == 1" constraint above, and it should never
+                % be any other number besides -1, 0, 1, or 2.
+                % Nonetheless, if for some reason an odd case gets
+                % through, play it to both ears, I guess.
+                    fullStimMatr(:,p,1) = tempStimMatr(:,fullStimList(p,1));
+                    fullStimMatr(:,p,2) = tempStimMatr(:,fullStimList(p,1));
+            end
+        end
+    else
+    % the stimuli are stereo WAV files
+
+        % preload all stims into a temporary matrix of samples
+        for q = 1:length(stimList)
+            [L R] = wavread(stimList(q,1));
+            tempStimMatr(0:length(L),q,1) = L;
+            tempStimMatr(0:length(R),q,2) = R;
+        end
+
+        % copy those stims into a matrix of trials
+        for r = 1:length(fullStimList)
+            fullStimMatr(:,r,:) = tempStimMatr(:,fullStimList(r,1),:);
+        end
+    end
+    
+    switchGUI(NaN,NaN,preloadGUI,readyGUI);
+    
+    
+
+    function startExp()
+        showTestingState();
+        checkProg(counter);
+    end
+
+% % % % % % % % % % % % % % % % % % % % % % % % % % % %
+% FUNCTIONS THAT DO THE CORE WORK OF RUNNING THE EXP
+% % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+
+    function checkProg(trialNum) 
+        counter = counter + 1;
+        if counter == length(fullStimList) + 1;
+        % if the counter is at the end, write the output file and show the
+        % finished screen.
+            outputFile = fopen(strcat(expCode,'_',subCode,'_',datestamp,'_results.txt'), 'w');
+            % %%%%%%%%%%%%%%%%
+            % %%%%%%%%%%%%%%%%
+            % should eventually pull in headers from the stim file when
+            % writing the output file (as well as perhaps also writing the
+            % response choices)
+            % %%%%%%%%%%%%%%%%
+            % %%%%%%%%%%%%%%%%
+            fprintf(outputFile,'%s\t','stim presentation order');
+            fprintf(outputFile,'%s\n','stim number (as ordered in the original file)');
+            for g=1:length(tempStimList)
+                fprintf(outputFile,'%i\t',expLog(g,1));
+                fprintf(outputFile,'%i\n',expLog(g,2));
+            end
+            fclose(outputFile);
+            showFinishedState();
+            
+        elseif mod(counter,pauses) == 0
+        % if it's time for a pause... 
+            if paused == 0
+            % if it's not already paused, then pause it
+                paused = 1;
+                showPauseState(trialNum);
+            else
+            % if it was already paused, unpause and continue
+                paused = 0;
+                hidePauseState();
+                playStim(trialNum);
+            end
+        else
+        % if it wasn't time for a pause, proceed
+            playStim(trialNum);
+        end
+    end
+
+    function playStim(trialNum) 
+        currentStim = fullStimMatr(:,trialNum,:);
+        
+        % truncate the audio vector just before the first NaN
+        a = find(isnan(currentStim(:,1,1)),1,'first');
+        currentStim = currentStim(1:a-1,:,:);
+        audioplayer(currentStim, sampRate);
+        
+        if strcmp(inputScheme, 'timeout') == 1
+        % if the experiment requires a response within a set time window,
+        % then start a timer immediately after the stim; in this case the
+        % "next" button (a.k.a. genericBtn) should already be hidden.
+            responseTimer = timer('startFcn',@showResponseWindow,'TimerFcn',@hideResponseWindow,'TasksToExecute',1,'StartDelay',inputDur*0.001);
+            playblocking(audioplayer);
+            start(responseTimer);
+        else
+        % the experiment allows infinite response time...
+            % disable the "next" button during the stim
+            set(genericBtn,'enable','off');
+            % play the sound, blocking code excution until it's done
+            playblocking(audioplayer);
+            % enable the "next" button
+            set(genericBtn,'enable','off');
+        end
+        % record the trial number and stimulus number. User response is
+        % pre-populated with a zero; this helps us detect multiple
+        % keystrokes and mark them as errors.
+        expLog(counter,1) = counter;
+        expLog(counter,2) = currentStimNum;
+        expLog(counter,3) = 0;
+    end
+
+% % % % % % % % % % % % % % % % % % % % % % % % % % % %
+% FUNCTIONS THAT DEAL WITH FORCED CHOICE RESPONSES
+% % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+
+    function showResponseWindow()
+        % show the forced choices
+        % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+         % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+        % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+         % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+        % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+         % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+        
+        % start listening for responses
+        set(experimentWindow,'KeyPressFcn',@acceptUserInput);
+    end
+
+    function hideResponseWindow()
+        % hide the forced choices
+        % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+         % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+        % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+         % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+        % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+         % % % % % % % % % % % % % % % % % % % % % % % % % % % % 
+        
+        % stop listening for responses
+        set(experimentWindow,'KeyPressFcn',@ignoreUserInput);
+        
+        % calculate ISI
+        isi = isiLo + round(rand(1)*(isiHi-isiLo));
+        
+        % wait for the ISI duration
+        isiTimer = timer('StartDelay',isi,'TasksToExecute',1,'TimerFcn',@ignoreUserInput);
+        start(isiTimer);
+        wait(isiTimer);
+        delete(isiTimer);
+        
+        % play the next stim
+        playStim(fullStimList(counter));
+    end
+
+    function ignoreUserInput(~,~)
+        % do nothing. This just exists to prevent keystrokes from getting
+        % passed to the command window at times when we don't want to
+        % collect user input.
+    end
+
+    function acceptUserInput(~,EventData)
+        % record responses
+        if expLog(counter,3) == 0
+        % if the user has not yet responded, record their response
+            expLog(counter,3) = EventData.Character;
+        else
+        % if for some reason they are giving a second response within the
+        % designated response time window, record the response in a
+        % separate cell.
+            expLog(counter,4) = EventData.Character;
+        end
+    end
+
+end

@@ -1,0 +1,73 @@
+function fullStimMatr = preloadStimuli(numSamp,numChan,stimList,fullStimList)
+
+    % fullStimMatr is a 3D array, described more fully below.
+    
+    % assuming all files are roughly the same length, we preallocate
+    % the vector of WAVs with NaNs for better memory performance
+    % (instead of figuring out the longest file, we just take the first
+    % stim and double its length. Extra NaNs at the end will be trimmed
+    % later.)  If by chance one of the later stims is longer than
+    % 2*firstStim, MATLAB will automatically reallocate to a bigger
+    % memory chunk (slows down the preloading but ultimately not a big
+    % deal if it happens)
+    
+    tempStimMatr = NaN(2*numSamp,length(stimList),2);
+    fullStimMatr = NaN(2*numSamp,length(fullStimList),2);
+    % hence we have an array of samples thusly arranged:
+    % dimension 2 (cols) = trials
+    % dimension 1 (rows) = samples
+    % dimension 3 (pgs.) = left channel (pg 1) & right channel (pg 2)
+
+    if numChan == 1
+    % the stimuli are mono WAV files
+
+        % preload all stims into a temporary matrix of samples
+        for n = 1:length(stimList)
+            M = wavread(stimList{n});
+            tempStimMatr(1:length(M),n) = M;
+        end
+
+        % copy those stims into a matrix of trials, with appropriate
+        % L/R assignments
+        for p = 1:length(fullStimList)
+            a = fullStimList(p,2); % the L/R code for each trial
+            % note: fullStimList(p,1) is the stimulus ID number (stimNum)
+            switch a
+                case 0
+                % play mono sound to both ears
+                    fullStimMatr(:,p,1) = tempStimMatr(:,fullStimList(p,1));
+                    fullStimMatr(:,p,2) = tempStimMatr(:,fullStimList(p,1));
+                case 1
+                % play mono stim to left ear
+                    fullStimMatr(:,p,1) = tempStimMatr(:,fullStimList(p,1));
+                    fullStimMatr(1:length(tempStimMatr),p,2) = 0;
+                case 2
+                % play mono stim to right ear
+                    fullStimMatr(1:length(tempStimMatr),p,1) = 0;
+                    fullStimMatr(:,p,2) = tempStimMatr(:,fullStimList(p,1));
+                otherwise
+                % this should never occur, since if the code is -1 then
+                % the user specified "stereo" which would fail the
+                % "numChan == 1" constraint above, and it should never
+                % be any other number besides -1, 0, 1, or 2.
+                % Nonetheless, if for some reason an odd case gets
+                % through, play it to both ears, I guess.
+                    fullStimMatr(:,p,1) = tempStimMatr(:,fullStimList(p,1));
+                    fullStimMatr(:,p,2) = tempStimMatr(:,fullStimList(p,1));
+            end
+        end
+    else
+    % the stimuli are stereo WAV files
+
+        % preload all stims into a temporary matrix of samples
+        for q = 1:length(stimList)
+            LR = wavread(stimList{q});
+            tempStimMatr(1:length(LR),q,1) = LR(:,1);
+            tempStimMatr(1:length(LR),q,2) = LR(:,2);
+        end
+
+        % copy those stims into a matrix of trials
+        for s = 1:length(fullStimList)
+            fullStimMatr(:,s,:) = tempStimMatr(:,fullStimList(s,1),:);
+        end
+    end

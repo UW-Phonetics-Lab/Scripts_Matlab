@@ -1,0 +1,151 @@
+ % Play sounds of various frequencies and amplitudes to L/R sound channels
+
+function hearingTest2()
+    %GLOBAL VARIABLES
+    %the frequencies you want to test, their amplitudes, and a random assignment to either left or right
+    subjectCode = '';
+    codedFilename = '';
+    frequencyVector = [100 200 500 800 1000 2000 5000 8000 10000];
+    amplitudeVector = [0.1 0.08 0.05 0.02 0.01 0.008 0.005 0.002 0.005];
+    directionVector = zeros(1,length(frequencyVector));
+    a = rand(size(directionVector));
+    for b = 1:length(a)
+        directionVector(b) = round(a(b)); %a random vector of zeros and ones, to represent left/right
+        if (directionVector(b) == 0)
+            directionVector(b) = -1; %zeros represent "not sure" in the responses, so left is recoded as -1 in this (the answer key)
+        end
+    end
+    inverseDirectionVector = -1 .* directionVector;
+    row1 = repmat(frequencyVector,1,2);
+    row2 = repmat(amplitudeVector,1,2);
+    row3 = horzcat(directionVector,inverseDirectionVector);
+    row4 = zeros(1,length(row1)); %this will hold the user responses
+    randomOrder = randperm(length(row1));
+    stimGrid = [row1(randomOrder);row2(randomOrder);row3(randomOrder);row4];
+    
+    sampleRate = 22050;
+    dur = round(sampleRate/10); 
+        %duration of the stimulus counted in number of samples. 
+        %it is rounded because it must be an integer.
+        %setting dur=sampleRate will give a 1-second sound.
+    sampleNum = 1:dur; %a vector of samples
+    bitDepth = 16; %should only be 8 or 16
+    k = 1; %counter
+    selectedResponse = 0; %holds the radio button state
+    
+    % initialize the GUI
+    mainWindow = figure('Visible','off','color',[0.5 0.8 0.5],'pos',[0 0 640 480]);
+    subjectPrompt = uicontrol('style','text','units','pixels','pos',[50 350 150 30],'backgroundColor',[1 1 1],'string','enter subject code and press Enter/Return');
+    subjectCodeBox = uicontrol('style','edit','units','pixels','pos',[50 320 150 30],'backgroundColor',[1 1 1],'callback',@enableStart);
+    startButton = uicontrol('style','pushbutton','string','Begin Hearing Test','pos',[50 250 150 25],'enable','off','callback',@showInstr);
+    movegui(mainWindow,'center');
+    set(mainWindow,'name','Hearing Screening');
+    set(mainWindow,'visible','on');
+
+    % the instructional interface
+    instr = uicontrol('style','text','pos',[50 310 150 50],'background',[1 1 1],'visible','off','string','You will hear sounds one at a time. Indicate which ear heard the sound.');
+    cont = uicontrol('style','pushbutton','pos',[50 280 150 30],'visible','off','string','Play first sound','callback',@startTest);
+    
+    % the interface for responding to sounds
+    btnGroup = uibuttongroup('visible','off','units','pixels','pos',[50 150 350 80],'SelectionChangeFcn',@changeResponse);
+    btnL = uicontrol('parent',btnGroup,'enable','off','style','Radio','tag','l','units','pixels','pos',[20 40 150 25],'string','Left');
+    btnC = uicontrol('parent',btnGroup,'enable','off','style','Radio','tag','c','units','pixels','pos',[120 40 150 25],'string','Neither/Unsure');
+    btnR = uicontrol('parent',btnGroup,'enable','off','style','Radio','tag','r','units','pixels','pos',[270 40 150 25],'string','Right');
+    btnS = uicontrol('parent',btnGroup,'enable','off','style','pushbutton','units','pixels','pos',[120 10 100 25],'string','Next sound','callback',@recordResponse);
+    set(btnGroup,'SelectedObject',[]);
+
+    % once a subject code is entered, enable them to start the test
+    function enableStart(~,~)
+        set(startButton,'enable','on');
+        set([subjectPrompt subjectCodeBox],'visible','off');
+        subjectCode = get(subjectCodeBox,'string');
+        codedFilename = strcat('ht_',subjectCode,'.txt');
+        
+    end
+    
+    % show instructions
+    function showInstr(~,~)
+        set([subjectPrompt subjectCodeBox startButton],'visible','off');
+        set([instr cont btnGroup],'visible','on');
+    end
+
+    % show the sound GUI and play a sound
+    function startTest(~,~)
+        set([instr cont],'visible','off');
+        set([btnL btnC btnR],'enable','on');
+        
+        % generate a pure tone sound
+        playSound();        
+    end
+
+    % respond to radio button
+    function changeResponse(~,eventdata)
+        set(btnS,'enable','on');
+        switch get(eventdata.NewValue,'tag')   % Get Tag of selected object
+            case 'l'
+                selectedResponse = -1;
+            case 'r'
+                selectedResponse = 1;
+            otherwise
+                selectedResponse = 0;
+        end
+    end
+
+    % record the answer
+    function recordResponse(~,~)
+        stimGrid(4,k) = selectedResponse;
+        k = k+1;
+        
+        % clear the radio buttons and disable the submit button
+        set(btnGroup,'SelectedObject',[]);
+        set(btnS,'enable','off');
+        
+        playSound();
+    end
+
+    %generate a pure tone sound
+    function playSound()
+        if (k <= length(stimGrid))
+            %  adjustedSampleNum = round(2*sampleNum*stimGrid(1,k)/sampleRate)*0.5*sampleRate/stimGrid(1,k);
+                %this gets adjusted for each frequency being tested to
+                %make the sounds end at zero crossings and thus avoid any
+                %clicks at the end of the tones. The drawback is stimuli of
+                %slightly varying lengths 
+            if (stimGrid(3,k) == -1)
+                b = stimGrid(2,k)*sin(sampleNum*stimGrid(1,k)*2*pi/sampleRate); 
+                    %normally might use the .* operator, but since only one
+                    %element is a vector (sampleNum) and all others are
+                    %scalars, there is no difference between * and .* here
+                c = zeros(1,dur);
+            else
+                b = zeros(1,dur);
+                c = stimGrid(2,k)*sin(sampleNum*stimGrid(1,k)*2*pi/sampleRate);
+            end
+            d = [b;c];
+            sound(d',sampleRate,bitDepth);
+                %transpose the d vector because MATLAB wants sound samples
+                %to be in columns instead of rows
+            if (k == length(stimGrid))
+                %change the submit button's text
+                set(btnS,'string','Finish test');
+            end
+        else
+            %write the output file
+            outputFile = fopen(codedFilename, 'w');
+            fprintf(outputFile, 'subject code: %s',subjectCode);
+            fprintf(outputFile, '\nfrequency\t');
+            fprintf(outputFile, '%i\t', stimGrid(1,:));
+            fprintf(outputFile, '\namplitude\t');
+            fprintf(outputFile, '%.4f \t', stimGrid(2,:));
+            fprintf(outputFile, '\ncorrect answer\t');
+            fprintf(outputFile, '%i\t', stimGrid(3,:));
+            fprintf(outputFile, '\nsubject''s response\t');
+            fprintf(outputFile, '%i\t', stimGrid(4,:));
+            fclose(outputFile);
+            %clear the UI and display finished message
+            set(btnGroup,'visible','off');
+            set(instr,'string','Thanks. You are finished!');
+            set(instr,'visible','on');
+        end
+    end
+end
